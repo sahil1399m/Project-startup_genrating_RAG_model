@@ -1,7 +1,12 @@
 import os
+import sys
+import subprocess
+
 if not os.path.exists("chroma_db"):
-    import subprocess
-    subprocess.run(["python", "data_ingestion.py"])
+    subprocess.run(
+        [sys.executable, "data_ingestion.py"],
+        check=True
+    )
 
 from auth import show_auth_ui, is_authenticated, logout, increment_blueprint_count, get_blueprint_count
 
