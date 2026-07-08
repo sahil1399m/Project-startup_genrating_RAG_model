@@ -7,27 +7,49 @@ import psycopg2.extras
 import json
 import os
 from datetime import datetime
-from dotenv import load_dotenv
 
-load_dotenv()
+
+# ── Secret Resolution (works locally AND on Streamlit Cloud) ──────────────────
+
+def _get_secret(key: str, default: str = None) -> str:
+    val = os.environ.get(key)
+    if val:
+        return val
+    try:
+        import streamlit as st
+        return st.secrets.get(key, default)
+    except Exception:
+        return default
 
 
 # ── Connection ─────────────────────────────────────────────────────────────────
 
 def _conn() -> psycopg2.extensions.connection:
+    host = _get_secret("DB_HOST")
+    if not host:
+        raise RuntimeError(
+            "DB_HOST is not set. Add it to Streamlit Cloud secrets or your .env file."
+        )
     return psycopg2.connect(
-        host=os.getenv("DB_HOST"),
-        port=os.getenv("DB_PORT", "5432"),
-        database=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
-        sslmode="require"
+        host=host,
+        port=_get_secret("DB_PORT", "5432"),
+        database=_get_secret("DB_NAME"),
+        user=_get_secret("DB_USER"),
+        password=_get_secret("DB_PASSWORD"),
+        sslmode="require",
+        connect_timeout=10,
     )
 
 
 # ── Schema ─────────────────────────────────────────────────────────────────────
 
+_db_initialized = False
+
+
 def init_mentor_db() -> None:
+    global _db_initialized
+    if _db_initialized:
+        return
     with _conn() as c:
         cur = c.cursor()
         cur.execute("""
@@ -55,11 +77,13 @@ def init_mentor_db() -> None:
         );
         """)
         c.commit()
+    _db_initialized = True
 
 
 # ── Write ──────────────────────────────────────────────────────────────────────
 
 def save_mentor_session(*, session_id, blueprint_id, user_email, sector, stage) -> None:
+    init_mentor_db()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with _conn() as c:
         cur = c.cursor()
@@ -74,6 +98,7 @@ def save_mentor_session(*, session_id, blueprint_id, user_email, sector, stage) 
 
 def save_mentor_message(*, session_id, role, content, intent="",
                         citations=None, tools_used=None) -> None:
+    init_mentor_db()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with _conn() as c:
         cur = c.cursor()
@@ -97,6 +122,7 @@ def save_mentor_message(*, session_id, role, content, intent="",
 # ── Read ───────────────────────────────────────────────────────────────────────
 
 def get_mentor_messages(session_id: str) -> list[dict]:
+    init_mentor_db()
     with _conn() as c:
         cur = c.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute("""
@@ -119,6 +145,7 @@ def get_mentor_messages(session_id: str) -> list[dict]:
 
 
 def get_sessions_for_blueprint(blueprint_id: int) -> list[dict]:
+    init_mentor_db()
     with _conn() as c:
         cur = c.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute("""
@@ -130,6 +157,7 @@ def get_sessions_for_blueprint(blueprint_id: int) -> list[dict]:
 
 
 def get_sessions_for_user(user_email: str) -> list[dict]:
+    init_mentor_db()
     with _conn() as c:
         cur = c.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute("""
@@ -139,6 +167,4 @@ def get_sessions_for_user(user_email: str) -> list[dict]:
         """, (user_email,))
         return [dict(r) for r in cur.fetchall()]
 
-
-# ── Init on import ─────────────────────────────────────────────────────────────
-init_mentor_db()
+# ── NO init_mentor_db() call here — lazy init per function instead ─────────────
