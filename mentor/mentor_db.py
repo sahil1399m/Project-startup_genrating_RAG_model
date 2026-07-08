@@ -167,4 +167,6 @@ def get_sessions_for_user(user_email: str) -> list[dict]:
         """, (user_email,))
         return [dict(r) for r in cur.fetchall()]
 
-# ── NO init_mentor_db() call here — lazy init per function instead ─────────────
+
+# ── Init on import ─────────────────────────────────────────────────────────────
+init_mentor_db()
