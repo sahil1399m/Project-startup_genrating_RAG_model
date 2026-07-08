@@ -13,27 +13,65 @@ import psycopg2.extras
 import json
 import os
 from datetime import datetime
-from dotenv import load_dotenv
 
-load_dotenv()
+# ── Secret Resolution (works locally AND on Streamlit Cloud) ──────────────────
+
+def _get_secret(key: str, default: str = None) -> str:
+    """
+    Priority:
+    1. os.environ  (set by Streamlit Cloud from TOML secrets, or local .env loaded externally)
+    2. st.secrets  (fallback direct read, only if streamlit is available)
+    3. default
+    """
+    val = os.environ.get(key)
+    if val:
+        return val
+    try:
+        import streamlit as st
+        return st.secrets.get(key, default)
+    except Exception:
+        return default
 
 
 # ── Connection ────────────────────────────────────────────────────────────────
 
 def _conn() -> psycopg2.extensions.connection:
+    host = _get_secret("DB_HOST")
+    port = _get_secret("DB_PORT", "5432")
+    database = _get_secret("DB_NAME")
+    user = _get_secret("DB_USER")
+    password = _get_secret("DB_PASSWORD")
+
+    if not host:
+        raise RuntimeError(
+            "DB_HOST is not set. Add it to Streamlit Cloud secrets or your .env file."
+        )
+
     return psycopg2.connect(
-        host=os.getenv("DB_HOST"),
-        port=os.getenv("DB_PORT", "5432"),
-        database=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
-        sslmode="require"
+        host=host,
+        port=port,
+        database=database,
+        user=user,
+        password=password,
+        sslmode="require",
+        connect_timeout=10,
     )
 
 
 # ── Schema ────────────────────────────────────────────────────────────────────
 
+_db_initialized = False  # module-level flag — init only once per process
+
+
 def init_db() -> None:
+    """
+    Creates tables if they don't exist.
+    Safe to call multiple times — runs only once per process due to the flag.
+    Call this explicitly at app startup, NOT at import time.
+    """
+    global _db_initialized
+    if _db_initialized:
+        return
     with _conn() as c:
         cur = c.cursor()
         cur.execute("""
@@ -69,6 +107,7 @@ def init_db() -> None:
         );
         """)
         c.commit()
+    _db_initialized = True
 
 
 # ── Write ─────────────────────────────────────────────────────────────────────
@@ -76,6 +115,7 @@ def init_db() -> None:
 def save_blueprint(*, title, original_query, rewritten_query, sector, stage,
                    business_model, market, confidence, user_email,
                    sections: dict, sources: list) -> int:
+    init_db()
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with _conn() as c:
         cur = c.cursor()
@@ -99,7 +139,7 @@ def save_blueprint(*, title, original_query, rewritten_query, sector, stage,
         for src in sources:
             cur.execute(
                 "INSERT INTO blueprint_sources (blueprint_id,source_name,source_url) VALUES (%s,%s,%s)",
-                (bp_id, src.get("name",""), src.get("url","")),
+                (bp_id, src.get("name", ""), src.get("url", "")),
             )
         c.commit()
     return bp_id
@@ -108,6 +148,7 @@ def save_blueprint(*, title, original_query, rewritten_query, sector, stage,
 # ── Read ──────────────────────────────────────────────────────────────────────
 
 def list_blueprints(user_email=None) -> list:
+    init_db()
     with _conn() as c:
         cur = c.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         if user_email:
@@ -121,6 +162,7 @@ def list_blueprints(user_email=None) -> list:
 
 
 def get_blueprint(blueprint_id: int) -> dict | None:
+    init_db()
     with _conn() as c:
         cur = c.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute("SELECT * FROM blueprints WHERE id=%s", (blueprint_id,))
@@ -149,6 +191,7 @@ def get_blueprint(blueprint_id: int) -> dict | None:
 
 
 def search_blueprints(query: str, user_email=None) -> list:
+    init_db()
     like = f"%{query}%"
     with _conn() as c:
         cur = c.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -170,6 +213,7 @@ def search_blueprints(query: str, user_email=None) -> list:
 # ── Delete ────────────────────────────────────────────────────────────────────
 
 def delete_blueprint(blueprint_id: int) -> None:
+    init_db()
     with _conn() as c:
         cur = c.cursor()
         cur.execute("DELETE FROM blueprints WHERE id=%s", (blueprint_id,))
@@ -177,6 +221,7 @@ def delete_blueprint(blueprint_id: int) -> None:
 
 
 def delete_all_blueprints(user_email=None) -> None:
+    init_db()
     with _conn() as c:
         cur = c.cursor()
         if user_email:
@@ -189,6 +234,7 @@ def delete_all_blueprints(user_email=None) -> None:
 # ── Favourite ─────────────────────────────────────────────────────────────────
 
 def toggle_favorite(blueprint_id: int) -> bool:
+    init_db()
     with _conn() as c:
         cur = c.cursor()
         cur.execute("SELECT is_favorite FROM blueprints WHERE id=%s", (blueprint_id,))
@@ -200,6 +246,4 @@ def toggle_favorite(blueprint_id: int) -> bool:
         c.commit()
     return bool(new_val)
 
-
-# Initialise on import
-init_db()
+# ── NO init_db() call here — lazy init per function instead ──────────────────
