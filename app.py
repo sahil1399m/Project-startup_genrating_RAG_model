@@ -3,10 +3,17 @@ if not os.path.exists("chroma_db"):
     import subprocess
     subprocess.run(["python", "data_ingestion.py"])
 
+from auth import show_auth_ui, is_authenticated, logout, increment_blueprint_count, get_blueprint_count
 
 import streamlit as st
+import requests
+import jwt
+import os
+from urllib.parse import urlencode
 from dotenv import load_dotenv
-import os, json
+
+load_dotenv()
+import json
 from datetime import datetime
 from sentence_transformers import SentenceTransformer, CrossEncoder
 import chromadb
@@ -16,7 +23,7 @@ from tavily import TavilyClient
 import plotly.graph_objects as go
 import google.generativeai as genai
 
-from auth import register_user, login_user, increment_blueprint_count
+# auth functions already imported above — remove this duplicate line
 from news_feed import get_startup_news
 from crag import run_crag
 import history as hist
@@ -717,7 +724,8 @@ hr { border: none !important; height: 1px !important;
 
 # ── Session State ──────────────────────────────────────────────────────────────
 for k, v in {
-    "logged_in": False, "user": None, "page": "login", "blueprints": [],
+    "logged_in": False, "authenticated": False, "user": None, "user_email": None,
+    "user_name": None, "user_profile": None, "page": "login", "blueprints": [],
     "hist_open": False, "hist_view_id": None, "hist_search": "",
     "hist_confirm_del": None, "hist_confirm_all": False,
     # Mentor state
@@ -1059,20 +1067,38 @@ def page_auth():
             em = st.text_input("Email Address", key="li_em", placeholder="you@example.com")
             pw = st.text_input("Password", type="password", key="li_pw", placeholder="••••••••")
             st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
+
             if st.button("Sign In →", use_container_width=True, type="primary", key="btn_li"):
                 if em and pw:
-                    ok, udata, msg = login_user(em, pw)
+                    from auth import login_with_password, set_session
+                    ok, profile, msg = login_with_password(em, pw)
                     if ok:
+                        set_session(profile)
                         st.session_state.logged_in = True
-                        st.session_state.user = udata
+                        st.session_state.user = {
+                            "name":                 profile.get("name", profile.get("email", "User")),
+                            "email":                profile.get("email", ""),
+                            "blueprints_generated": get_blueprint_count(),
+                            "created_at":           "",
+                        }
                         st.session_state.page = "dashboard"
-                        user_name = (udata.get('name') if isinstance(udata, dict) else None) or 'User'
-                        st.success(f"Welcome back, {user_name}! 👋")
                         st.rerun()
                     else:
                         st.error(msg)
                 else:
                     st.warning("Please fill all fields.")
+
+            st.divider()
+            from auth import get_google_login_url
+            google_url = get_google_login_url()
+            st.markdown(
+                f'<a href="{google_url}" target="_self">'
+                f'<button style="width:100%;padding:0.6rem;border-radius:12px;'
+                f'background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);'
+                f'color:#e2e8f0;font-size:0.86rem;font-weight:700;cursor:pointer">'
+                f'🔵 Continue with Google</button></a>',
+                unsafe_allow_html=True
+            )
 
         with tab_reg:
             name = st.text_input("Full Name",        key="rg_nm", placeholder="Priya Sharma")
@@ -1085,8 +1111,9 @@ def page_auth():
                 elif len(pw2) < 6:                 st.warning("Password must be at least 6 characters.")
                 elif pw2 != pw3:                   st.error("Passwords don't match.")
                 else:
-                    ok, msg = register_user(name, em2, pw2)
-                    if ok: st.success("Account created! Sign in now.")
+                    from auth import register_user as _register
+                    ok, msg = _register(name, em2, pw2)
+                    if ok: st.success("Account created! Please sign in.")
                     else:  st.error(msg)
 
         st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
@@ -1426,7 +1453,7 @@ def chart_risk(data):
 # SHARED TOPBAR  (used by history sub-pages)
 # ══════════════════════════════════════════════════════════════════════════════
 def _render_topbar(user: dict) -> None:
-    t1, t2, t3, t4 = st.columns([5, 4, 1, 1])
+    t1, t2, t3 = st.columns([5, 4, 1])
     with t1:
         st.markdown(
             '<div class="nav-logo">'
@@ -1446,11 +1473,6 @@ def _render_topbar(user: dict) -> None:
             unsafe_allow_html=True,
         )
     with t3:
-        if st.button("🏠 Dashboard", key="tb_dash", type="secondary"):
-            st.session_state.hist_open = False
-            st.session_state.hist_view_id = None
-            st.rerun()
-    with t4:
         if st.button("Sign Out", key="tb_signout", type="secondary"):
             for k in ["logged_in", "user", "page", "blueprints", "current_blueprint"]:
                 st.session_state[k] = {
@@ -2416,6 +2438,29 @@ text-align:center;color:#334155;font-size:0.75rem;line-height:1.8">
 # ══════════════════════════════════════════════════════════════════════════════
 # ROUTER
 # ══════════════════════════════════════════════════════════════════════════════
+# Handle OAuth callback first (App ID redirect)
+params = st.query_params
+if "code" in params:
+    from auth import exchange_code_for_tokens, get_user_profile, set_session
+    with st.spinner("Signing you in..."):
+        tokens = exchange_code_for_tokens(params["code"])
+        if tokens:
+            profile = get_user_profile(tokens["access_token"])
+            set_session(profile)
+            st.session_state.logged_in = True
+            st.session_state.user = {
+                "name":                 profile.get("name", profile.get("email", "User")),
+                "email":                profile.get("email", ""),
+                "blueprints_generated": 0,
+                "created_at":           "",
+            }
+            st.session_state.page = "dashboard"
+            st.query_params.clear()
+            st.rerun()
+        else:
+            st.error("Login failed. Please try again.")
+            st.query_params.clear()
+
 if not st.session_state.logged_in:
     page_auth()
 elif st.session_state.page == "mentor":

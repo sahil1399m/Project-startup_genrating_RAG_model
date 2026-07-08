@@ -1,6 +1,0 @@
-users.json
-blueprint_history.db
-.env
-*.db
-__pycache__/
-chroma_db/

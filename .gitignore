@@ -34,6 +34,5 @@ build/
 dist/
 *.egg-info/
 
-users.json
 blueprint_history.db
 chroma_db/

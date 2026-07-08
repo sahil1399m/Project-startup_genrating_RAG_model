@@ -1,5 +1,5 @@
 """
-history_db.py  — SQLite persistence for Blueprint History.
+history_db.py — PostgreSQL (Supabase) persistence for Blueprint History.
 
 Schema
 ------
@@ -8,31 +8,37 @@ blueprint_sections — named JSON content sections per blueprint
 blueprint_sources  — source links per blueprint
 """
 
-import sqlite3
+import psycopg2
+import psycopg2.extras
 import json
+import os
 from datetime import datetime
-from pathlib import Path
+from dotenv import load_dotenv
 
-DB_PATH = Path("blueprint_history.db")
+load_dotenv()
 
 
 # ── Connection ────────────────────────────────────────────────────────────────
 
-def _conn() -> sqlite3.Connection:
-    c = sqlite3.connect(str(DB_PATH), check_same_thread=False)
-    c.row_factory = sqlite3.Row
-    c.execute("PRAGMA journal_mode=WAL")
-    c.execute("PRAGMA foreign_keys=ON")
-    return c
+def _conn() -> psycopg2.extensions.connection:
+    return psycopg2.connect(
+        host=os.getenv("DB_HOST"),
+        port=os.getenv("DB_PORT", "5432"),
+        database=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        sslmode="require"
+    )
 
 
 # ── Schema ────────────────────────────────────────────────────────────────────
 
 def init_db() -> None:
     with _conn() as c:
-        c.executescript("""
+        cur = c.cursor()
+        cur.execute("""
         CREATE TABLE IF NOT EXISTS blueprints (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            id              SERIAL PRIMARY KEY,
             title           TEXT    NOT NULL,
             original_query  TEXT    NOT NULL,
             rewritten_query TEXT,
@@ -45,19 +51,24 @@ def init_db() -> None:
             user_email      TEXT,
             timestamp       TEXT    NOT NULL
         );
+        """)
+        cur.execute("""
         CREATE TABLE IF NOT EXISTS blueprint_sections (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            id           SERIAL PRIMARY KEY,
             blueprint_id INTEGER NOT NULL REFERENCES blueprints(id) ON DELETE CASCADE,
             section_name TEXT    NOT NULL,
             content      TEXT    NOT NULL
         );
+        """)
+        cur.execute("""
         CREATE TABLE IF NOT EXISTS blueprint_sources (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            id           SERIAL PRIMARY KEY,
             blueprint_id INTEGER NOT NULL REFERENCES blueprints(id) ON DELETE CASCADE,
             source_name  TEXT,
             source_url   TEXT
         );
         """)
+        c.commit()
 
 
 # ── Write ─────────────────────────────────────────────────────────────────────
@@ -67,25 +78,27 @@ def save_blueprint(*, title, original_query, rewritten_query, sector, stage,
                    sections: dict, sources: list) -> int:
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with _conn() as c:
-        cur = c.execute(
+        cur = c.cursor()
+        cur.execute(
             """INSERT INTO blueprints
                (title,original_query,rewritten_query,sector,stage,
                 business_model,market,confidence,user_email,timestamp)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               RETURNING id""",
             (title, original_query, rewritten_query, sector, stage,
              business_model, market, confidence, user_email, ts),
         )
-        bp_id = cur.lastrowid
+        bp_id = cur.fetchone()[0]
         for name, content in sections.items():
             if not isinstance(content, str):
                 content = json.dumps(content, ensure_ascii=False)
-            c.execute(
-                "INSERT INTO blueprint_sections (blueprint_id,section_name,content) VALUES (?,?,?)",
+            cur.execute(
+                "INSERT INTO blueprint_sections (blueprint_id,section_name,content) VALUES (%s,%s,%s)",
                 (bp_id, name, content),
             )
         for src in sources:
-            c.execute(
-                "INSERT INTO blueprint_sources (blueprint_id,source_name,source_url) VALUES (?,?,?)",
+            cur.execute(
+                "INSERT INTO blueprint_sources (blueprint_id,source_name,source_url) VALUES (%s,%s,%s)",
                 (bp_id, src.get("name",""), src.get("url","")),
             )
         c.commit()
@@ -96,74 +109,80 @@ def save_blueprint(*, title, original_query, rewritten_query, sector, stage,
 
 def list_blueprints(user_email=None) -> list:
     with _conn() as c:
+        cur = c.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         if user_email:
-            rows = c.execute(
-                "SELECT * FROM blueprints WHERE user_email=? ORDER BY id DESC",
+            cur.execute(
+                "SELECT * FROM blueprints WHERE user_email=%s ORDER BY id DESC",
                 (user_email,),
-            ).fetchall()
+            )
         else:
-            rows = c.execute("SELECT * FROM blueprints ORDER BY id DESC").fetchall()
-    return [dict(r) for r in rows]
+            cur.execute("SELECT * FROM blueprints ORDER BY id DESC")
+        return [dict(r) for r in cur.fetchall()]
 
 
 def get_blueprint(blueprint_id: int) -> dict | None:
     with _conn() as c:
-        row = c.execute("SELECT * FROM blueprints WHERE id=?", (blueprint_id,)).fetchone()
+        cur = c.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT * FROM blueprints WHERE id=%s", (blueprint_id,))
+        row = cur.fetchone()
         if row is None:
             return None
         bp = dict(row)
-        sec_rows = c.execute(
-            "SELECT section_name,content FROM blueprint_sections WHERE blueprint_id=?",
+        cur.execute(
+            "SELECT section_name,content FROM blueprint_sections WHERE blueprint_id=%s",
             (blueprint_id,),
-        ).fetchall()
+        )
         bp["sections"] = {}
-        for sr in sec_rows:
+        for sr in cur.fetchall():
             content = sr["content"]
             try:
                 content = json.loads(content)
             except (json.JSONDecodeError, TypeError):
                 pass
             bp["sections"][sr["section_name"]] = content
-        src_rows = c.execute(
-            "SELECT source_name,source_url FROM blueprint_sources WHERE blueprint_id=?",
+        cur.execute(
+            "SELECT source_name,source_url FROM blueprint_sources WHERE blueprint_id=%s",
             (blueprint_id,),
-        ).fetchall()
-        bp["sources"] = [{"name": r["source_name"], "url": r["source_url"]} for r in src_rows]
+        )
+        bp["sources"] = [{"name": r["source_name"], "url": r["source_url"]} for r in cur.fetchall()]
     return bp
 
 
 def search_blueprints(query: str, user_email=None) -> list:
     like = f"%{query}%"
     with _conn() as c:
+        cur = c.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         if user_email:
-            rows = c.execute(
+            cur.execute(
                 """SELECT * FROM blueprints
-                   WHERE user_email=? AND (title LIKE ? OR original_query LIKE ?)
+                   WHERE user_email=%s AND (title ILIKE %s OR original_query ILIKE %s)
                    ORDER BY id DESC""",
                 (user_email, like, like),
-            ).fetchall()
+            )
         else:
-            rows = c.execute(
-                "SELECT * FROM blueprints WHERE title LIKE ? OR original_query LIKE ? ORDER BY id DESC",
+            cur.execute(
+                "SELECT * FROM blueprints WHERE title ILIKE %s OR original_query ILIKE %s ORDER BY id DESC",
                 (like, like),
-            ).fetchall()
-    return [dict(r) for r in rows]
+            )
+        return [dict(r) for r in cur.fetchall()]
 
 
 # ── Delete ────────────────────────────────────────────────────────────────────
 
 def delete_blueprint(blueprint_id: int) -> None:
     with _conn() as c:
-        c.execute("DELETE FROM blueprints WHERE id=?", (blueprint_id,))
+        cur = c.cursor()
+        cur.execute("DELETE FROM blueprints WHERE id=%s", (blueprint_id,))
         c.commit()
 
 
 def delete_all_blueprints(user_email=None) -> None:
     with _conn() as c:
+        cur = c.cursor()
         if user_email:
-            c.execute("DELETE FROM blueprints WHERE user_email=?", (user_email,))
+            cur.execute("DELETE FROM blueprints WHERE user_email=%s", (user_email,))
         else:
-            c.execute("DELETE FROM blueprints")
+            cur.execute("DELETE FROM blueprints")
         c.commit()
 
 
@@ -171,11 +190,13 @@ def delete_all_blueprints(user_email=None) -> None:
 
 def toggle_favorite(blueprint_id: int) -> bool:
     with _conn() as c:
-        row = c.execute("SELECT is_favorite FROM blueprints WHERE id=?", (blueprint_id,)).fetchone()
+        cur = c.cursor()
+        cur.execute("SELECT is_favorite FROM blueprints WHERE id=%s", (blueprint_id,))
+        row = cur.fetchone()
         if row is None:
             return False
-        new_val = 0 if row["is_favorite"] else 1
-        c.execute("UPDATE blueprints SET is_favorite=? WHERE id=?", (new_val, blueprint_id))
+        new_val = 0 if row[0] else 1
+        cur.execute("UPDATE blueprints SET is_favorite=%s WHERE id=%s", (new_val, blueprint_id))
         c.commit()
     return bool(new_val)
 
