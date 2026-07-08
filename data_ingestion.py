@@ -109,9 +109,7 @@ def ingest():
     print(f"Created {len(all_chunks)} chunks total")
 
     print("\nGenerating embeddings...")
-    embedder = SentenceTransformer(
-    "sentence-transformers/all-MiniLM-L6-v2"
-)
+    embedder = SentenceTransformer("all-MiniLM-L6-v2")
     embeddings = embedder.encode(all_chunks, show_progress_bar=True)
 
     print("\nStoring in ChromaDB...")
