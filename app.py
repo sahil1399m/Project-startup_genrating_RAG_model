@@ -1,26 +1,7 @@
 import os
-import subprocess
-import sys
-import streamlit as st
-
 if not os.path.exists("chroma_db"):
-    st.write("Building ChromaDB... Please wait.")
-
-    result = subprocess.run(
-        [sys.executable, "data_ingestion.py"],
-        capture_output=True,
-        text=True
-    )
-
-    st.subheader("STDOUT")
-    st.code(result.stdout)
-
-    st.subheader("STDERR")
-    st.code(result.stderr)
-
-    st.write("Return code:", result.returncode)
-
-    st.stop()
+    import subprocess
+    subprocess.run(["python", "data_ingestion.py"])
 
 from auth import show_auth_ui, is_authenticated, logout, increment_blueprint_count, get_blueprint_count
 
