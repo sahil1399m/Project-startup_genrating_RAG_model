@@ -35,3 +35,4 @@ dist/
 *.egg-info/
 
 blueprint_history.db
+chroma_db/
