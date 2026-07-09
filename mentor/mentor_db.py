@@ -12,14 +12,14 @@ from datetime import datetime
 # ── Secret Resolution (works locally AND on Streamlit Cloud) ──────────────────
 
 def _get_secret(key: str, default: str = None) -> str:
-    val = os.environ.get(key)
-    if val:
-        return val
     try:
         import streamlit as st
-        return st.secrets.get(key, default)
+        val = st.secrets.get(key)
+        if val:
+            return str(val)
     except Exception:
-        return default
+        pass
+    return os.environ.get(key, default)
 
 
 # ── Connection ─────────────────────────────────────────────────────────────────
