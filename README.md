@@ -76,43 +76,49 @@ User Idea
 ---
 
 ## 🏗️ Tech Stack
-Frontend          →  Streamlit (custom dark theme, professional UI)
-Auth              →  IBM App ID (OAuth2/OIDC, Cloud Directory, Google login)
-Vector DB         →  ChromaDB (persistent, 13 Indian policy PDFs embedded)
-Relational DB     →  Supabase PostgreSQL (blueprints, mentor sessions)
-AI Orchestration  →  Python (custom CRAG pipeline)
-Deployment        →  Streamlit Cloud
-News Feed         →  NewsAPI (live Indian startup ecosystem news)
+
+| Layer | Technology |
+|---|---|
+| **Frontend** | Streamlit (custom dark theme, professional UI) |
+| **Authentication** | IBM App ID (OAuth2/OIDC, Cloud Directory, Google login) |
+| **Vector DB** | ChromaDB (persistent, 13 Indian policy PDFs embedded) |
+| **Relational DB** | Supabase PostgreSQL (blueprints, mentor sessions) |
+| **AI Orchestration** | Python (custom CRAG pipeline) |
+| **Deployment** | Streamlit Cloud |
+| **News Feed** | NewsAPI (live Indian startup ecosystem news) |
 
 ---
 
 ## 📁 Project Structure
+
+```
 IBM_PROJ/
-├── app.py                  # Main Streamlit app & UI orchestrator
-├── crag.py                 # CRAG pipeline (Corrective RAG engine)
-├── auth.py                 # IBM App ID authentication
-├── history_db.py           # Supabase PostgreSQL — blueprint history
-├── history_ui.py           # History page UI
-├── history.py              # History save/load helpers
-├── data_ingestion.py       # PDF → ChromaDB ingestion
-├── news_feed.py            # NewsAPI live feed
-├── mentor_ui.py            # AI Mentor chat UI
+├── app.py                   # Main Streamlit app & UI orchestrator
+├── crag.py                  # CRAG pipeline (Corrective RAG engine)
+├── auth.py                  # IBM App ID authentication
+├── history_db.py            # Supabase PostgreSQL — blueprint history
+├── history_ui.py            # History page UI
+├── history.py               # History save/load helpers
+├── data_ingestion.py        # PDF → ChromaDB ingestion
+├── news_feed.py             # NewsAPI live feed
+├── mentor_ui.py             # AI Mentor chat UI
 ├── mentor/
-│   ├── mentor_agent.py     # Mentor AI logic
-│   ├── mentor_db.py        # Supabase — mentor conversations
-│   ├── context.py          # Blueprint context builder
-│   ├── intent_classifier.py# 14-intent Groq classifier
-│   ├── synthesizer.py      # Granite answer synthesizer
-│   ├── tool_router.py      # Tool selection router
-│   └── memory.py           # Conversation memory
+│   ├── mentor_agent.py      # Mentor AI logic
+│   ├── mentor_db.py         # Supabase — mentor conversations
+│   ├── context.py           # Blueprint context builder
+│   ├── intent_classifier.py # 14-intent Groq classifier
+│   ├── synthesizer.py       # Granite answer synthesizer
+│   ├── tool_router.py       # Tool selection router
+│   └── memory.py            # Conversation memory
 ├── data/
-│   ├── government/         # DPIIT, Startup India PDFs
-│   ├── funding/            # BCG, funding guides
-│   ├── legal/              # Legal frameworks
-│   ├── incubators/         # AIM, AIC guidelines
-│   └── ...                 # 13 policy PDFs total
+│   ├── government/          # DPIIT, Startup India PDFs
+│   ├── funding/             # BCG, funding guides
+│   ├── legal/               # Legal frameworks
+│   ├── incubators/          # AIM, AIC guidelines
+│   └── ...                  # 13 policy PDFs total
 ├── requirements.txt
 └── .env.example
+```
 
 ---
 
