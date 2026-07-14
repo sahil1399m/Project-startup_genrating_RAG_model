@@ -733,14 +733,13 @@ for k, v in {
 # ══════════════════════════════════════════════════════════════════════════════
 # CACHED AI RESOURCES
 # ══════════════════════════════════════════════════════════════════════════════
-@st.cache_resource(show_spinner="Loading AI models... (first load may take 3-5 mins)")
+@st.cache_resource
 def load_embedder():
     return SentenceTransformer("all-MiniLM-L6-v2")
 
-@st.cache_resource(show_spinner="Loading reranker... (first load may take 3-5 mins)")
+@st.cache_resource
 def load_reranker():
     return CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
-
 
 def get_secret(key):
     """Works both locally (.env) and on Streamlit Cloud (secrets.toml)"""
