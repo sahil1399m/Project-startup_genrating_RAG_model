@@ -1,6 +1,6 @@
 import os
 
-# ── HuggingFace token (must be before any model imports) ─────────────────────
+# ── HuggingFace token (MUST be before any model imports) ─────────────────────
 os.environ["SENTENCE_TRANSFORMERS_HOME"] = "/tmp/sentence_transformers"
 try:
     import streamlit as st
@@ -38,14 +38,6 @@ from crag import run_crag
 import history as hist
 from history_ui import render_history_page, render_history_view
 from mentor_ui import render_mentor_page
-
-
-st.set_page_config(
-    page_title="Startup Blueprint Generator",
-    page_icon="🚀",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # DESIGN SYSTEM — Professional Dark Theme
