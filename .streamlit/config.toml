@@ -1,5 +1,11 @@
+@"
 [server]
 maxUploadSize = 50
+headless = true
 
 [runner]
 fastReruns = true
+
+[global]
+developmentMode = false
+"@ | Out-File -FilePath .streamlit/config.toml -Encoding utf8
