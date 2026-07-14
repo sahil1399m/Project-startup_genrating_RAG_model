@@ -1,17 +1,28 @@
 import os
+
+# ── HuggingFace token (must be before any model imports) ─────────────────────
+os.environ["SENTENCE_TRANSFORMERS_HOME"] = "/tmp/sentence_transformers"
+try:
+    import streamlit as st
+    hf_token = st.secrets.get("HF_TOKEN", "") or os.getenv("HF_TOKEN", "")
+except Exception:
+    hf_token = os.getenv("HF_TOKEN", "")
+if hf_token:
+    os.environ["HF_TOKEN"] = hf_token
+    os.environ["HUGGINGFACE_HUB_TOKEN"] = hf_token
+
+# ── ChromaDB auto-ingest ──────────────────────────────────────────────────────
 if not os.path.exists("chroma_db"):
     import subprocess
     subprocess.run(["python", "data_ingestion.py"])
 
+# ── Imports ───────────────────────────────────────────────────────────────────
 from auth import show_auth_ui, is_authenticated, logout, increment_blueprint_count, get_blueprint_count
-
 import streamlit as st
 import requests
 import jwt
-import os
 from urllib.parse import urlencode
 from dotenv import load_dotenv
-
 load_dotenv()
 import json
 from datetime import datetime
@@ -22,15 +33,12 @@ from groq import Groq
 from tavily import TavilyClient
 import plotly.graph_objects as go
 import google.generativeai as genai
-
-# auth functions already imported above — remove this duplicate line
 from news_feed import get_startup_news
 from crag import run_crag
 import history as hist
 from history_ui import render_history_page, render_history_view
 from mentor_ui import render_mentor_page
 
-load_dotenv()
 
 st.set_page_config(
     page_title="Startup Blueprint Generator",
