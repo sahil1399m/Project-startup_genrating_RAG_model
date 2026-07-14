@@ -1,17 +1,9 @@
 import os
-if not os.path.exists("chroma_db"):
-    import subprocess
-    subprocess.run(["python", "data_ingestion.py"])
-
-from auth import show_auth_ui, is_authenticated, logout, increment_blueprint_count, get_blueprint_count
-
 import streamlit as st
 import requests
 import jwt
-import os
 from urllib.parse import urlencode
 from dotenv import load_dotenv
-
 load_dotenv()
 import json
 from datetime import datetime
@@ -22,22 +14,16 @@ from groq import Groq
 from tavily import TavilyClient
 import plotly.graph_objects as go
 import google.generativeai as genai
-
-# auth functions already imported above — remove this duplicate line
+from auth import show_auth_ui, is_authenticated, logout, increment_blueprint_count, get_blueprint_count
 from news_feed import get_startup_news
 from crag import run_crag
 import history as hist
 from history_ui import render_history_page, render_history_view
 from mentor_ui import render_mentor_page
 
-load_dotenv()
-
-st.set_page_config(
-    page_title="Startup Blueprint Generator",
-    page_icon="🚀",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
+if not os.path.exists("chroma_db"):
+    import subprocess
+    subprocess.run(["python", "data_ingestion.py"])
 
 # ══════════════════════════════════════════════════════════════════════════════
 # DESIGN SYSTEM — Professional Dark Theme
@@ -747,14 +733,13 @@ for k, v in {
 # ══════════════════════════════════════════════════════════════════════════════
 # CACHED AI RESOURCES
 # ══════════════════════════════════════════════════════════════════════════════
-@st.cache_resource(show_spinner="Loading AI models... (first load may take 3-5 mins)")
+@st.cache_resource
 def load_embedder():
     return SentenceTransformer("all-MiniLM-L6-v2")
 
-@st.cache_resource(show_spinner="Loading reranker... (first load may take 3-5 mins)")
+@st.cache_resource
 def load_reranker():
     return CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
-
 
 def get_secret(key):
     """Works both locally (.env) and on Streamlit Cloud (secrets.toml)"""
@@ -2495,4 +2480,4 @@ elif st.session_state.page == "mentor":
 else:
     page_dashboard()
 
-render_footer()
+render_footer()\
