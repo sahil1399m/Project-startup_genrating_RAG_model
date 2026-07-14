@@ -747,11 +747,11 @@ for k, v in {
 # ══════════════════════════════════════════════════════════════════════════════
 # CACHED AI RESOURCES
 # ══════════════════════════════════════════════════════════════════════════════
-@st.cache_resource
+@st.cache_resource(show_spinner="Loading AI models... (first load may take 3-5 mins)")
 def load_embedder():
     return SentenceTransformer("all-MiniLM-L6-v2")
 
-@st.cache_resource
+@st.cache_resource(show_spinner="Loading reranker... (first load may take 3-5 mins)")
 def load_reranker():
     return CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 
@@ -767,7 +767,7 @@ def get_secret(key):
     return os.getenv(key)
 
 
-@st.cache_resource
+@st.cache_resource(show_spinner="Loading Granite model... (first load may take 3-5 mins)")
 def load_granite():
     return ModelInference(
         model_id="ibm/granite-4-h-small",
@@ -778,23 +778,24 @@ def load_granite():
         project_id=get_secret("IBM_PROJECT_ID")
     )
 
-@st.cache_resource
+@st.cache_resource(show_spinner="Loading Chroma collection... (first load may take 3-5 mins)")
 def load_collection():
     client = chromadb.PersistentClient(path="chroma_db")
     return client.get_collection("startup_docs")
 
-@st.cache_resource
+@st.cache_resource(show_spinner="Loading Groq client... (first load may take 3-5 mins)")
 def load_groq():
     return Groq(api_key=get_secret("GROQ_API_KEY"))
 
-@st.cache_resource
+@st.cache_resource(show_spinner="Loading Tavily client... (first load may take 3-5 mins)")
 def load_tavily():
     return TavilyClient(api_key=get_secret("TAVILY_API_KEY"))
 
-@st.cache_resource
+@st.cache_resource(show_spinner="Loading Gemini client... (first load may take 3-5 mins)")
 def load_gemini():
     genai.configure(api_key=get_secret("GOOGLE_API_KEY"))
     return genai
+
 
 embedder    = load_embedder()
 reranker    = load_reranker()
