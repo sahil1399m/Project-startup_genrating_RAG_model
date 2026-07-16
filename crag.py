@@ -84,14 +84,24 @@ UPPER_THRESHOLD = -3.0   # raw logit above this → CORRECT
 LOWER_THRESHOLD = -6.5   # raw logit below this → INCORRECT
                          # between → AMBIGUOUS
 
+def _get_gemini_embedding(text: str) -> list:
+    from google import genai as _genai
+    import os
+    _client = _genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+    result = _client.models.embed_content(
+        model="models/gemini-embedding-001",
+        contents=text
+    )
+    return result.embeddings[0].values
 
 # ══════════════════════════════════════════════════════════════════════════════
 # NODE: retrieve
 # ══════════════════════════════════════════════════════════════════════════════
+
 def node_retrieve(query, embedder, collection, n=8):
-    """Fetch top-n candidate chunks from ChromaDB using dense retrieval."""
-    embedding = embedder.encode([query]).tolist()
-    results   = collection.query(query_embeddings=embedding, n_results=n)
+    """Fetch top-n candidate chunks from ChromaDB using Gemini embeddings."""
+    embedding = _get_gemini_embedding(query)
+    results   = collection.query(query_embeddings=[embedding], n_results=n)
     docs      = results["documents"][0]
     metas     = results["metadatas"][0]
     return docs, metas

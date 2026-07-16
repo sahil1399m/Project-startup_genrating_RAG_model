@@ -1,5 +1,27 @@
 import os
+
+# Must be before ALL other imports
+os.environ["SENTENCE_TRANSFORMERS_HOME"] = "/tmp/st_cache"
 import streamlit as st
+st.set_page_config(
+    page_title="Startup Blueprint Generator",
+    page_icon="🚀",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+try:
+    hf = st.secrets.get("HF_TOKEN", "") or os.getenv("HF_TOKEN", "")
+except Exception:
+    hf = os.getenv("HF_TOKEN", "")
+if hf:
+    os.environ["HF_TOKEN"] = hf
+    os.environ["HUGGINGFACE_HUB_TOKEN"] = hf
+
+if not os.path.exists("chroma_db"):
+    import subprocess
+    subprocess.run(["python", "data_ingestion.py"])
+
+from auth import show_auth_ui, is_authenticated, logout, increment_blueprint_count, get_blueprint_count
 import requests
 import jwt
 from urllib.parse import urlencode
@@ -7,23 +29,18 @@ from dotenv import load_dotenv
 load_dotenv()
 import json
 from datetime import datetime
-from sentence_transformers import SentenceTransformer, CrossEncoder
+from sentence_transformers import CrossEncoder
 import chromadb
 from ibm_watsonx_ai.foundation_models import ModelInference
 from groq import Groq
 from tavily import TavilyClient
 import plotly.graph_objects as go
 import google.generativeai as genai
-from auth import show_auth_ui, is_authenticated, logout, increment_blueprint_count, get_blueprint_count
 from news_feed import get_startup_news
 from crag import run_crag
 import history as hist
 from history_ui import render_history_page, render_history_view
 from mentor_ui import render_mentor_page
-
-if not os.path.exists("chroma_db"):
-    import subprocess
-    subprocess.run(["python", "data_ingestion.py"])
 
 # ══════════════════════════════════════════════════════════════════════════════
 # DESIGN SYSTEM — Professional Dark Theme
@@ -733,9 +750,10 @@ for k, v in {
 # ══════════════════════════════════════════════════════════════════════════════
 # CACHED AI RESOURCES
 # ══════════════════════════════════════════════════════════════════════════════
-@st.cache_resource
-def load_embedder():
-    return SentenceTransformer("all-MiniLM-L6-v2")
+import os
+os.environ["SENTENCE_TRANSFORMERS_HOME"] = "/tmp/st_models"
+os.environ["HF_HOME"] = "/tmp/hf_cache"
+
 
 @st.cache_resource
 def load_reranker():
@@ -782,7 +800,7 @@ def load_gemini():
     return genai
 
 
-embedder    = load_embedder()
+embedder    = None  # Using Google Gemini embeddings now
 reranker    = load_reranker()
 granite     = load_granite()
 collection  = load_collection()
@@ -2480,4 +2498,4 @@ elif st.session_state.page == "mentor":
 else:
     page_dashboard()
 
-render_footer()\
+render_footer()

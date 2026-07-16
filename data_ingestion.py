@@ -1,139 +1,101 @@
-from dotenv import load_dotenv
+"""
+data_ingestion.py — Ingest PDFs into ChromaDB using Google text-embedding-004
+"""
 import os
-from pypdf import PdfReader
-from sentence_transformers import SentenceTransformer
+import glob
 import chromadb
+from dotenv import load_dotenv
+from google import genai
 
 load_dotenv()
 
-# ──────────────────────────────────────────────────────────────────────────
-# doc_type inference
-# ──────────────────────────────────────────────────────────────────────────
-# Preferred: organize your `data/` folder into subfolders named after the
-# doc_type itself, e.g.:
-#   data/government_scheme/startup_india_guidelines.pdf
-#   data/government_scheme/msme_policy.pdf
-#   data/market_report/fintech_trends_2026.pdf
-#   data/legal/companies_act_startup_clauses.pdf
-#   data/investor/incubator_directory.pdf
-#
-# If a PDF isn't in one of these subfolders, we fall back to keyword
-# matching on the filename so existing flat folders still get tagged
-# reasonably instead of all landing in "general".
+# Configure Google API
+client_genai = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 
-KNOWN_DOC_TYPES = {
-    "government_scheme", "market_report", "legal", "investor", "general"
-}
+def get_embedding(text: str) -> list:
+    result = client_genai.models.embed_content(
+        model="models/gemini-embedding-001",
+        contents=text
+    )
+    return result.embeddings[0].values
 
-FILENAME_KEYWORDS = {
-    "government_scheme": ["scheme", "msme", "startup_india", "dpiit", "policy", "subsidy", "yojana"],
-    "market_report":     ["market", "trend", "report", "survey", "industry"],
-    "legal":             ["legal", "compliance", "act", "regulation", "tax", "gst", "company_law"],
-    "investor":          ["investor", "incubator", "accelerator", "vc", "funding", "angel"],
-}
-
-
-def infer_doc_type(filepath, folder_root):
-    """
-    1. If the PDF lives directly under data/<doc_type>/..., use that.
-    2. Otherwise, keyword-match the filename.
-    3. Otherwise, "general".
-    """
-    rel = os.path.relpath(filepath, folder_root)
-    parts = rel.split(os.sep)
-
-    if len(parts) > 1 and parts[0].lower() in KNOWN_DOC_TYPES:
-        return parts[0].lower()
-
-    fname = parts[-1].lower()
-    for doc_type, keywords in FILENAME_KEYWORDS.items():
-        if any(kw in fname for kw in keywords):
-            return doc_type
-
-    return "general"
-
-
-def load_pdfs(folder="data"):
-    docs = []
-    for root, dirs, files in os.walk(folder):
-        for filename in files:
-            if filename.endswith(".pdf"):
-                filepath = os.path.join(root, filename)
-                rel_path = os.path.relpath(filepath, folder)
-                doc_type = infer_doc_type(filepath, folder)
-                print(f"  Reading: {rel_path}  [doc_type={doc_type}]")
-                try:
-                    reader = PdfReader(filepath)
-                    for i, page in enumerate(reader.pages):
-                        text = page.extract_text()
-                        if text and len(text.strip()) > 50:
-                            docs.append({
-                                "text": text.strip(),
-                                "source": rel_path,
-                                "page": i + 1,
-                                "doc_type": doc_type,
-                            })
-                except Exception as e:
-                    print(f"  Skipping {rel_path}: {e}")
-    return docs
-
-
-def chunk_text(text, chunk_size=500, overlap=50):
+def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list[str]:
     words = text.split()
     chunks = []
-    for i in range(0, len(words), chunk_size - overlap):
+    i = 0
+    while i < len(words):
         chunk = " ".join(words[i:i + chunk_size])
-        if chunk:
-            chunks.append(chunk)
+        chunks.append(chunk)
+        i += chunk_size - overlap
     return chunks
 
+def ingest_pdfs():
+    # Delete old chroma_db
+    import shutil
+    if os.path.exists("chroma_db"):
+        shutil.rmtree("chroma_db")
+        print("Deleted old chroma_db")
 
-def ingest():
-    print("Loading PDFs from all subfolders...")
-    docs = load_pdfs()
-    print(f"\nFound {len(docs)} pages across all PDFs\n")
-
-    print("Chunking text...")
-    all_chunks = []
-    all_metadata = []
-    for doc in docs:
-        chunks = chunk_text(doc["text"])
-        for j, chunk in enumerate(chunks):
-            all_chunks.append(chunk)
-            all_metadata.append({
-                "source": doc["source"],
-                "page": doc["page"],
-                "chunk": j,
-                "doc_type": doc["doc_type"],
-            })
-    print(f"Created {len(all_chunks)} chunks total")
-
-    print("\nGenerating embeddings...")
-    embedder = SentenceTransformer("all-MiniLM-L6-v2")
-    embeddings = embedder.encode(all_chunks, show_progress_bar=True)
-
-    print("\nStoring in ChromaDB...")
+    # Create new client
     client = chromadb.PersistentClient(path="chroma_db")
-    collection = client.get_or_create_collection("startup_docs")
-    collection.add(
-        documents=all_chunks,
-        embeddings=embeddings.tolist(),
-        metadatas=all_metadata,
-        ids=[f"chunk_{i}" for i in range(len(all_chunks))]
+    collection = client.create_collection(
+        name="startup_docs",
+        metadata={"hnsw:space": "cosine"}
     )
-    print(f"\nDone! {len(all_chunks)} chunks stored in ChromaDB")
 
-    print("\nSources indexed:")
-    sources = set(m["source"] for m in all_metadata)
-    for s in sorted(sources):
-        print(f"  - {s}")
+    # Find all PDFs
+    pdf_files = glob.glob("data/**/*.pdf", recursive=True)
+    print(f"Found {len(pdf_files)} PDFs")
 
-    print("\ndoc_type breakdown:")
-    from collections import Counter
-    type_counts = Counter(m["doc_type"] for m in all_metadata)
-    for dt, count in sorted(type_counts.items(), key=lambda x: -x[1]):
-        print(f"  - {dt}: {count} chunks")
+    import pdfplumber
+    doc_id = 0
 
+    for pdf_path in pdf_files:
+        print(f"Processing: {pdf_path}")
+        try:
+            with pdfplumber.open(pdf_path) as pdf:
+                full_text = ""
+                for page in pdf.pages:
+                    text = page.extract_text()
+                    if text:
+                        full_text += text + "\n"
+
+            if not full_text.strip():
+                print(f"  Skipping — no text extracted")
+                continue
+
+            chunks = chunk_text(full_text)
+            print(f"  {len(chunks)} chunks")
+
+            import time
+
+            for i, chunk in enumerate(chunks):
+                if len(chunk.strip()) < 50:
+                    continue
+                try:
+                    time.sleep(1)  # 1 second delay between calls
+                    embedding = get_embedding(chunk)
+                    collection.add(
+                        ids=[f"doc_{doc_id}"],
+                        embeddings=[embedding],
+                        documents=[chunk],
+                        metadatas=[{
+                            "source": os.path.basename(pdf_path),
+                            "chunk": i
+                        }]
+                    )
+                    doc_id += 1
+                except Exception as e:
+                    print(f"  Chunk {i} error: {e}")
+                    continue
+
+            print(f"  Done — {doc_id} total chunks so far")
+
+        except Exception as e:
+            print(f"  Error: {e}")
+            continue
+
+    print(f"\n✅ Ingestion complete! {doc_id} chunks stored in chroma_db")
 
 if __name__ == "__main__":
-    ingest()
+    ingest_pdfs()
