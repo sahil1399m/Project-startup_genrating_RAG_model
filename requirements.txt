@@ -1,39 +1,30 @@
 # IBM Granite
 ibm-watsonx-ai==1.5.14
-
 # Google Gemini
+google-genai
 google-generativeai
-
 # Groq
 groq
-
 # Tavily
 tavily-python
-
 # Embeddings & Reranker
 sentence-transformers
 transformers
 torch
-
 # Vector Database
 chromadb
-
 # PDF
 pypdf
-
+pdfplumber
 # Frontend
 streamlit
-
 # Charts
 plotly
-
 # Data
 pandas
 numpy
-
 # Environment
 python-dotenv
-
 # HTTP
 requests
 PyJWT
