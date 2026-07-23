@@ -15,16 +15,21 @@ import history as hist
 
 def _init_state() -> None:
     defaults = {
-        "hist_open":        False,
-        "hist_view_id":     None,
-        "hist_search":      "",
-        "hist_confirm_del": None,
-        "hist_confirm_all": False,
+    "hist_open":        False,
+    "hist_view_id":     None,
+    "hist_search":      "",
+    "hist_confirm_del": None,
+    "hist_confirm_all": False,
+    "hist_mentor_id":   None,
+    "hist_lockin_id":   None,
     }
+    if "hist_deep_research_id" not in st.session_state:
+        st.session_state.hist_deep_research_id = None
+    if "hist_lockin_id" not in st.session_state:
+        st.session_state.hist_lockin_id = None
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
-
 
 # ═════════════════════════════════════════════════════════════════════════════
 # HISTORY LIST PAGE
@@ -41,6 +46,7 @@ def render_history_page(user_email=None) -> None:
                      use_container_width=True):
             st.session_state.hist_open = False
             st.session_state.hist_view_id = None
+            st.session_state.hist_lockin_id = None
             st.rerun()
     with h2:
         st.markdown(
@@ -115,7 +121,6 @@ def render_history_page(user_email=None) -> None:
     for bp in items:
         _render_list_card(bp)
 
-
 def _render_list_card(bp: dict) -> None:
     bp_id = bp["id"]
     fav   = bool(bp.get("is_favorite", 0))
@@ -127,7 +132,7 @@ def _render_list_card(bp: dict) -> None:
     cc = CONF_COLOR.get(conf, "#64748b")
     cb = CONF_BG.get(conf, "rgba(255,255,255,0.04)")
     fav_border = "border-color:rgba(251,191,36,0.35);background:rgba(251,191,36,0.025);" if fav else ""
-
+    
     left, right = st.columns([7, 3])
 
     with left:
@@ -156,12 +161,39 @@ def _render_list_card(bp: dict) -> None:
 
     with right:
         st.markdown("<div style='height:0.2rem'></div>", unsafe_allow_html=True)
+
+        # 1. View button
         if st.button("👁  View Blueprint", key=f"hp_view_{bp_id}",
-                     use_container_width=True, type="primary"):
+                    use_container_width=True, type="primary"):
             st.session_state.hist_view_id = bp_id
             st.session_state.hist_open = False
             st.rerun()
+            
+        # 2. AI Mentor button (NEW)
+        if st.button("🧠 AI Mentor", key=f"hp_mentor_{bp_id}",
+                    use_container_width=True, type="secondary"):
+            st.session_state.hist_mentor_id = bp_id
+            st.session_state.hist_open = False
+            st.session_state.hist_view_id = None
+            st.rerun()
+        
+        # 3. Deep Research button  ← ADD ONLY HERE
+        if st.button("🔍 Deep Research", key=f"hp_dr_{bp_id}",
+                     use_container_width=True, type="secondary"):
+            st.session_state.hist_deep_research_id = bp_id
+            st.session_state.hist_open = False
+            st.rerun()
 
+        # 4. Save + Delete (single fc, dc — no duplicate)
+        # 4. LOCK IN button
+        if st.button("🔒 LOCK IN", key=f"hp_lockin_{bp_id}",
+                     use_container_width=True, type="secondary"):
+            st.session_state.hist_lockin_id = bp_id
+            st.session_state.hist_open = False
+            st.session_state.hist_view_id = None
+            st.rerun()
+
+        # 5. Save + Delete (single fc, dc — no duplicate)
         fc, dc = st.columns(2)
         with fc:
             fl = "⭐ Saved" if fav else "☆ Save"

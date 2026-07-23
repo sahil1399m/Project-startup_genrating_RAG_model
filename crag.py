@@ -87,12 +87,32 @@ LOWER_THRESHOLD = -6.5   # raw logit below this → INCORRECT
 def _get_gemini_embedding(text: str) -> list:
     from google import genai as _genai
     import os
-    _client = _genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+    import streamlit as st
+
+    # Guard against empty text
+    if not text or not text.strip():
+        text = "startup business idea India"
+
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        try:
+            api_key = st.secrets.get("GOOGLE_API_KEY")
+        except Exception:
+            pass
+    if not api_key:
+        raise ValueError("GOOGLE_API_KEY not found in environment or secrets")
+    
+    # Debug — remove after fixing
+    st.write(f"DEBUG: API key found: {bool(api_key)}, length: {len(api_key) if api_key else 0}")
+
+    _client = _genai.Client(api_key=api_key)
     result = _client.models.embed_content(
         model="models/gemini-embedding-001",
-        contents=text
+        contents=text.strip()
     )
-    return result.embeddings[0].values
+    if result is None or not result.embeddings:
+        raise ValueError("Gemini embedding returned empty result")
+    return list(result.embeddings[0].values)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # NODE: retrieve
@@ -229,11 +249,11 @@ Write one 50-80 word retrieval-focused paragraph combining every important conce
         model = gemini_client.GenerativeModel("gemini-2.5-flash")
 
         response = model.generate_content(
-            prompt,
             generation_config=genai.GenerationConfig(
                 temperature=0.0,
-                max_output_tokens=1800
+                max_output_tokens=3000
             )
+
         )
 
         rewritten = response.text.strip()

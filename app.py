@@ -1,5 +1,4 @@
 import os
-
 # Must be before ALL other imports
 os.environ["SENTENCE_TRANSFORMERS_HOME"] = "/tmp/st_cache"
 import streamlit as st
@@ -41,6 +40,8 @@ from crag import run_crag
 import history as hist
 from history_ui import render_history_page, render_history_view
 from mentor_ui import render_mentor_page
+from lock_in_ui import render_lock_in_page
+from home_page import render_home_page
 
 # ══════════════════════════════════════════════════════════════════════════════
 # DESIGN SYSTEM — Professional Dark Theme
@@ -731,6 +732,7 @@ for k, v in {
     "user_name": None, "user_profile": None, "page": "login", "blueprints": [],
     "hist_open": False, "hist_view_id": None, "hist_search": "",
     "hist_confirm_del": None, "hist_confirm_all": False,
+    "hist_deep_research_id": None,   # ← ADD IT HERE inside the dict
     # Mentor state
     "mentor_session":       None,
     "mentor_session_id":    None,
@@ -738,13 +740,14 @@ for k, v in {
     "mentor_input_key":     0,
     "mentor_pending_input": "",
     "_mentor_processing":   False,
-    # Single source of truth for the most recently generated blueprint.
-    # Persists across reruns (e.g. clicking "Explore with AI Mentor") until
-    # a new blueprint is generated, the user logs out, or clears the session.
     "current_blueprint": None,
+    "home_section": "dashboard",
+    "doubt_history": [],
+    "hist_mentor_id": None
 }.items():
     if k not in st.session_state:
         st.session_state[k] = v
+
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -963,12 +966,6 @@ def page_auth():
         st.markdown("<div style='padding-top:2.5rem'>", unsafe_allow_html=True)
         st.markdown('<div class="hero-eyebrow">🚀 AI-Powered Startup Intelligence</div>', unsafe_allow_html=True)
         st.markdown('<div class="main-header">Build Your Startup<br>Blueprint in Minutes</div>', unsafe_allow_html=True)
-        st.markdown(
-            '<p class="hero-sub">Powered by IBM Granite 4.0, Groq Llama 3.3 & Gemini Flash. '
-            'Get a full Business Model Canvas, budget plan, GTM strategy, '
-            'investor map & risk matrix — grounded in live Indian policy data.</p>',
-            unsafe_allow_html=True
-        )
 
         # Tech stack badges
         st.markdown(
@@ -1085,7 +1082,7 @@ def page_auth():
                             "blueprints_generated": get_blueprint_count(),
                             "created_at":           "",
                         }
-                        st.session_state.page = "dashboard"
+                        st.session_state.page = "home"
                         st.rerun()
                     else:
                         st.error(msg)
@@ -1188,13 +1185,22 @@ def gen_bmc(idea, sector, model_type, ctx):
 
 
 def gen_budget(idea, sector, ctx):
-    s = f"Startup financial advisor for {sector} in India. Return only valid JSON."
+    s = f"""You are a startup financial advisor for {sector} in India.
+Return ONLY valid JSON. Never copy example values.
+Generate REALISTIC budget figures based on the actual startup idea and sector.
+Indian {sector} startups have different cost structures — research them carefully."""
+
     u = (f"Startup brief:\n{idea}\n\nPolicy context:\n{ctx}\n\n"
-         'Return ONLY this JSON: {"phases":['
-         '{"name":"MVP","duration":"Month 1-3","items":[{"item":"Tech Development","amount":120000}],"total":120000},'
-         '{"name":"Launch","duration":"Month 4-6","items":[{"item":"Marketing","amount":80000}],"total":80000},'
-         '{"name":"Growth","duration":"Month 7-12","items":[{"item":"Scaling","amount":180000}],"total":180000}'
-         '],"total_12_months":380000,"funding_suggestion":"Bootstrap + Startup India Seed Fund"}')
+         f"Generate a realistic 12-month phased budget for this specific {sector} startup in India. "
+         f"Consider actual costs: tech development, salaries, marketing, infrastructure, legal, etc. "
+         f"Make amounts REALISTIC for the sector and stage — not generic placeholders.\n\n"
+         'Return ONLY this JSON structure:\n'
+         '{"phases":['
+         '{"name":"MVP","duration":"Month 1-3","items":[{"item":"item name","amount":actual_number}],"total":sum},'
+         '{"name":"Launch","duration":"Month 4-6","items":[{"item":"item name","amount":actual_number}],"total":sum},'
+         '{"name":"Growth","duration":"Month 7-12","items":[{"item":"item name","amount":actual_number}],"total":sum}'
+         '],"total_12_months":total_sum,"funding_suggestion":"specific funding recommendation"}')
+    
     d = json.loads(ask_groq(s, u, json_mode=True))
     if "phases" not in d:
         for k in ["budget_phases", "phase", "plan", "budget", "breakdown"]:
@@ -1233,14 +1239,21 @@ def gen_investors(idea, sector, ctx):
 
 
 def gen_competitors(idea, sector):
-    s = "Competitive intelligence analyst for Indian markets. Return only valid JSON."
-    u = (f"{sector} startup brief:\n{idea}\n\n"
-         'Return ONLY JSON: {"competitors":['
-         '{"name":"Co1","strength":"s","weakness":"w","market_share":30},'
-         '{"name":"Co2","strength":"s","weakness":"w","market_share":25},'
-         '{"name":"Co3","strength":"s","weakness":"w","market_share":20},'
-         '{"name":"Our Startup","strength":"advantage","weakness":"gap","market_share":5}],'
-         '"our_differentiators":["d1","d2","d3"],"market_gaps":["g1","g2"]}')
+    s = """You are a competitive intelligence analyst for Indian startup markets.
+Return ONLY valid JSON. Never use placeholder values.
+market_share values must be REALISTIC and must add up to 100.
+Base them on actual market research for the specific sector and idea."""
+
+    u = (f"{sector} startup idea:\n{idea}\n\n"
+         f"Identify 3-4 REAL competitors in India for this specific startup idea. "
+         f"Research actual companies in the {sector} space. "
+         f"Assign REALISTIC market share percentages that reflect actual market position — "
+         f"do NOT use 30/25/20/5 as defaults.\n\n"
+         'Return ONLY JSON matching this schema exactly:\n'
+         '{"competitors":['
+         '{"name":"Real Company Name","strength":"specific strength","weakness":"specific weakness","market_share":35}],'
+         '"our_differentiators":["specific differentiator 1","specific differentiator 2","specific differentiator 3"],'
+         '"market_gaps":["specific gap 1","specific gap 2"]}')
     return json.loads(ask_groq(s, u, json_mode=True))
 
 
@@ -1427,9 +1440,12 @@ def chart_risk(data):
         sev  = r.get("severity", "Medium"); prob = r.get("probability", "Medium")
         cat  = r.get("category", "");       mit  = r.get("mitigation", "")
         c    = cl.get(sev, "#f59e0b")
+        import random
+        jitter_x = pm.get(prob, 2) + random.uniform(-0.15, 0.15)
+        jitter_y = sm.get(sev, 2) + random.uniform(-0.15, 0.15)
         fig.add_trace(go.Scatter(
-            x=[pm.get(prob, 2)], y=[sm.get(sev, 2)], mode="markers+text",
-            marker=dict(size=54, color=c, opacity=0.13, line=dict(color=c, width=2)),
+            x=[jitter_x], y=[jitter_y], mode="markers+text",
+            marker=dict(size=70, color=c, opacity=0.25, line=dict(color=c, width=2.5)),
             text=[cat], textposition="middle center", textfont=dict(size=10, color=c),
             hovertemplate=f"<b>{cat}</b><br>Severity: {sev}<br>Probability: {prob}<br><br>Mitigation: {mit}<extra></extra>",
             showlegend=False
@@ -1492,11 +1508,23 @@ def _render_topbar(user: dict) -> None:
 
 # ══════════════════════════════════════════════════════════════════════════════
 # DASHBOARD PAGE
-# ══════════════════════════════════════════════════════════════════════════════
 def page_dashboard():
     user = st.session_state.user
 
-    # ── History routing — full-page views short-circuit everything below ──────
+    # ── FORCE CLEAR deep research if hist_open is True ────────────────────────
+    if st.session_state.get("hist_open") and st.session_state.get("hist_deep_research_id") is not None:
+        st.session_state.hist_deep_research_id = None
+        st.rerun()
+
+    # 1. FIRST — history list
+    if st.session_state.hist_open:
+        st.session_state.hist_deep_research_id = None
+        _render_topbar(user)
+        render_history_page(user_email=user.get("email"))
+        render_footer()
+        st.stop()
+
+    # 2. SECOND — blueprint detail view
     if st.session_state.hist_view_id is not None:
         _render_topbar(user)
         render_history_view(
@@ -1516,14 +1544,26 @@ def page_dashboard():
         render_footer()
         st.stop()
 
-    if st.session_state.hist_open:
+    # 3. THIRD — deep research
+    if st.session_state.hist_deep_research_id is not None:
         _render_topbar(user)
-        render_history_page(user_email=user.get("email"))
+        if st.button("← Back to History", key="dr_back", type="secondary"):
+            st.session_state.hist_deep_research_id = None
+            st.session_state.hist_open = True
+            st.rerun()
+        bp = hist.load_blueprint_for_display(st.session_state.hist_deep_research_id)
+        from deep_research_ui import render_deep_research_page
+        render_deep_research_page(
+            blueprint=bp,
+            groq_client=load_groq(),
+            tavily=load_tavily(),
+            user_email=user.get("email"),
+        )
         render_footer()
         st.stop()
 
     # ── Sticky Top Bar ────────────────────────────────────────────────────────
-    nb1, nb2, nb3, nb4 = st.columns([5, 4, 1, 1])
+    nb1, nb2, nb3, nb4, nb5 = st.columns([5, 4, 1, 1, 1])
     with nb1:
         st.markdown(
             '<div class="nav-logo">'
@@ -1543,11 +1583,16 @@ def page_dashboard():
             unsafe_allow_html=True
         )
     with nb3:
+        if st.button("🏠 Home", key="home_btn", type="secondary"):
+            st.session_state.page = "home"
+            st.rerun()
+    with nb4:
         if st.button("📚 History", key="hist_btn", type="secondary"):
             st.session_state.hist_open = True
             st.session_state.hist_view_id = None
+            st.session_state.hist_deep_research_id = None
             st.rerun()
-    with nb4:
+    with nb5:
         if st.button("Sign Out", key="signout", type="secondary"):
             for k in ["logged_in", "user", "page", "blueprints", "current_blueprint"]:
                 st.session_state[k] = {
@@ -2358,7 +2403,8 @@ def render_blueprint_section(bp: dict, show_crag_debug: bool, detailed: bool):
                         unsafe_allow_html=True
                     )
                 else:
-                    st.info("Not used — CORRECT confidence; PDF-only was sufficient.")
+                    msg = "Not used — CORRECT confidence; PDF-only was sufficient." if confidence == "CORRECT" else "Web search was used for blueprint context (see Explore Results below)."
+                    st.info(msg)
 
         with st.expander("ℹ️ How CRAG works in this app"):
             st.markdown("""
@@ -2458,7 +2504,7 @@ if "code" in params:
                 "blueprints_generated": 0,
                 "created_at":           "",
             }
-            st.session_state.page = "dashboard"
+            st.session_state.page = "home"
             st.query_params.clear()
             st.rerun()
         else:
@@ -2467,11 +2513,55 @@ if "code" in params:
 
 if not st.session_state.logged_in:
     page_auth()
+
+elif st.session_state.get("hist_lockin_id"):
+    bp_id = st.session_state.hist_lockin_id
+    bp = hist.load_blueprint_for_display(bp_id)
+    if bp:
+        from lock_in_ui import render_lock_in_page
+        render_lock_in_page(
+            blueprint=bp,
+            user=st.session_state.user,
+            groq_client=groq_client,
+            tavily=tavily,
+        )
+    else:
+        st.session_state.hist_lockin_id = None
+        st.rerun()
+
+elif st.session_state.get("hist_mentor_id"):
+    bp_id = st.session_state.hist_mentor_id
+    bp = hist.load_blueprint_for_display(bp_id)
+    if bp:
+        render_mentor_page(
+            idea=bp.get("original_query", ""),
+            sector=bp.get("sector", ""),
+            stage=bp.get("stage", ""),
+            business_model=bp.get("business_model", ""),
+            market=bp.get("market", ""),
+            crag_result=bp.get("crag_result", {}),
+            bmc_data=bp.get("bmc_data", {}),
+            budget_data=bp.get("budget_data", {}),
+            gtm_data=bp.get("gtm_data", {}),
+            investor_data=bp.get("investor_data", {}),
+            competitor_data=bp.get("competitor_data", {}),
+            risk_data=bp.get("risk_data", {}),
+            blueprint_id=bp_id,
+            user_email=st.session_state.user["email"],
+            groq_client=groq_client,
+            granite_client=granite,
+            embedder=embedder,
+            collection=collection,
+            tavily_client=tavily,
+        )
+    else:
+        st.session_state.hist_mentor_id = None
+        st.rerun()
+
 elif st.session_state.page == "mentor":
     bp = st.session_state.get("current_blueprint")
     if bp is None:
-        # Edge case: mentor page without blueprint data — fall back to dashboard
-        st.session_state.page = "dashboard"
+        st.session_state.page = "home"
         st.rerun()
     else:
         render_mentor_page(
@@ -2495,7 +2585,12 @@ elif st.session_state.page == "mentor":
             collection=collection,
             tavily_client=tavily,
         )
-else:
+
+elif st.session_state.page == "dashboard":
     page_dashboard()
+
+else:
+    # Default: home page
+    render_home_page(user=st.session_state.user, groq_client=groq_client)
 
 render_footer()

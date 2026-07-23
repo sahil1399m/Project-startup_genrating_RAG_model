@@ -30,7 +30,22 @@ def search_chromadb(
         context   : single merged text block for prompt injection
     """
     try:
-        embedding = embedder.encode([query]).tolist()
+        from google import genai as _genai
+        import os
+        import streamlit as st
+        api_key = None
+        try:
+            api_key = st.secrets.get("GOOGLE_API_KEY")
+        except Exception:
+            pass
+        if not api_key:
+            api_key = os.getenv("GOOGLE_API_KEY")
+        _client = _genai.Client(api_key=api_key)
+        result = _client.models.embed_content(
+            model="models/gemini-embedding-001",
+            contents=query
+        )
+        embedding = [list(result.embeddings[0].values)]
         results   = collection.query(
             query_embeddings=embedding,
             n_results=min(n_results, 10),

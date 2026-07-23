@@ -801,7 +801,7 @@ def _render_message(msg: dict) -> None:
 # ══════════════════════════════════════════════════════════════════════════════
 #  STATE
 # ══════════════════════════════════════════════════════════════════════════════
-def _init_state() -> None:
+def _init_state(blueprint_id: int | None, user_email: str) -> None:
     defaults = {
         "mentor_session":       None,
         "mentor_session_id":    None,
@@ -816,6 +816,14 @@ def _init_state() -> None:
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
+            
+    # --- NEW DB LOADING LOGIC ---
+    if blueprint_id is not None:
+        session_key = f"mentor_messages_{blueprint_id}"
+        if session_key not in st.session_state:
+            from mentor.mentor_db import load_bp_messages
+            st.session_state[session_key] = load_bp_messages(blueprint_id, user_email)
+        st.session_state.mentor_messages_ui = st.session_state[session_key]
 
 
 def _get_or_create_session(ctx: dict):
@@ -851,7 +859,7 @@ def render_mentor_page(
     collection,
     tavily_client,
 ) -> None:
-    _init_state()
+    _init_state(blueprint_id, user_email)
     st.markdown(_CSS, unsafe_allow_html=True)
 
     if st.session_state.mentor_session is None:
@@ -899,16 +907,30 @@ def _render_nav() -> None:
   </div>
 </div>
 """, unsafe_allow_html=True)
-    _, nc2, nc3 = st.columns([6, 1, 1])
+
+    # Adjust the column widths to fit the new button
+    _, nc2, nc3, nc4 = st.columns([5, 1, 1, 1])
+    
     with nc2:
         if st.button("← Blueprint", key="m_back", type="primary", use_container_width=True):
-            st.session_state.page = "dashboard"; st.rerun()
+            st.session_state.page = "dashboard"
+            st.session_state.hist_mentor_id = None # Clear mentor state
+            st.rerun()
+            
     with nc3:
+        # --- NEW BACK TO HISTORY BUTTON ---
+        if st.button("← History", key="m_back_hist", type="secondary", use_container_width=True):
+            st.session_state.hist_mentor_id = None
+            st.session_state.hist_open = True
+            st.rerun()
+            
+    with nc4:
         if st.button("Sign out", key="m_signout", use_container_width=True):
             for k in ["logged_in","user","page","blueprints"]:
                 st.session_state[k] = {"logged_in":False,"user":None,"page":"login","blueprints":[]}[k]
             st.session_state.mentor_session     = None
             st.session_state.mentor_messages_ui = []
+            st.session_state.hist_mentor_id = None # Clear mentor state
             st.rerun()
 
 
@@ -997,6 +1019,7 @@ def _render_chat(
     *, session, blueprint_id, user_email,
     groq_client, granite_client, embedder, collection, tavily_client,
 ) -> None:
+    
     msgs = st.session_state.mentor_messages_ui
 
     if not msgs:
@@ -1040,6 +1063,17 @@ def _render_chat(
             "intent":"","citations":[],"tools_used":[],
             "via_voice": False,   # JS-triggered voice sets this via pending
         })
+        
+        # --- NEW SAVE LOGIC ---
+        if blueprint_id is not None:
+            from mentor.mentor_db import save_bp_message
+            save_bp_message(
+                blueprint_id=blueprint_id, 
+                user_email=user_email, 
+                role="user", 
+                content=question
+            )
+            
         st.rerun()
 
     # ── Process last unanswered user message ──────────────────────────────────
@@ -1093,6 +1127,20 @@ def _process(*, session, question, blueprint_id, user_email,
             "tools_used": result["tools_used"],
             "from_doc":   bool(doc_ctx),
         })
+        
+        # --- NEW SAVE LOGIC ---
+        if blueprint_id is not None:
+            from mentor.mentor_db import save_bp_message
+            save_bp_message(
+                blueprint_id=blueprint_id,
+                user_email=user_email,
+                role="assistant",
+                content=result["answer"],
+                intent=result.get("intent", ""),
+                citations=result.get("citations", []),
+                tools_used=result.get("tools_used", [])
+            )
+            
     except Exception as e:
         st.session_state.mentor_messages_ui.append({
             "role":"assistant",
