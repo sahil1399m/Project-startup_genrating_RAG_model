@@ -12,7 +12,7 @@
 
 **Generate a complete, policy-grounded startup blueprint in minutes — powered by CRAG, IBM Granite 4.0, Groq Llama 3.3 & Gemini Flash**
 
-[Live Demo](https://startupgenratingragmodel-ehjsvexardml5voavk29rk.streamlit.app) · [Report Bug](https://github.com/sahil1399m/Project-startup_genrating_RAG_model/issues) · [Request Feature](https://github.com/sahil1399m/Project-startup_genrating_RAG_model/issues)
+[Live Demo](https://hackthon-project-2.streamlit.app/) · [Report Bug](https://github.com/sahil1399m/Project-startup_genrating_RAG_model/issues) · [Request Feature](https://github.com/sahil1399m/Project-startup_genrating_RAG_model/issues)
 
 </div>
 
